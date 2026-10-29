@@ -11,3 +11,11 @@ chrome-profile/
 browser-state.json
 runtime-state.json
 browser-operation.lock
+
+downloads/
+conversation-context/
+
+local-project.json
+
+# Private delegated output; not published.
+docs/delegated-mcp-design.md

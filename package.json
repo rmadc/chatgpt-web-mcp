@@ -7,12 +7,12 @@
   "author": "Goudu66",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Goudu666/chatgpt-web-mcp.git"
+    "url": "git+https://github.com/rmadc/chatgpt-web-mcp.git"
   },
   "bugs": {
-    "url": "https://github.com/Goudu666/chatgpt-web-mcp/issues"
+    "url": "https://github.com/rmadc/chatgpt-web-mcp/issues"
   },
-  "homepage": "https://github.com/Goudu666/chatgpt-web-mcp#readme",
+  "homepage": "https://github.com/rmadc/chatgpt-web-mcp#readme",
   "keywords": [
     "mcp",
     "model-context-protocol",

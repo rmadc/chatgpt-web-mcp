@@ -14,6 +14,7 @@ import {
   CONTEXT_ARCHIVE_DIR,
   DEFAULT_ANSWER_TIER,
   HEADLESS,
+  MINIMIZED,
   HISTORY_QUIET_PERIOD_MS,
   MAX_HISTORY_RESULTS,
   MAX_CONVERSATION_TURNS,
@@ -45,6 +46,8 @@ import {
 } from "./config.js";
 import { ChatGPTWebError } from "./errors.js";
 import { SELECTORS, TEXT } from "./selectors.js";
+import { minimizeWindow } from "./background-window.js";
+import { authenticationGate } from "./auth.js";
 
 // `:has-text()` is a Playwright-only selector and cannot be passed to
 // document.querySelectorAll() inside page.evaluate(). Filter stale thinking
@@ -1318,7 +1321,7 @@ export class ChatGPTBrowser {
           "--no-first-run",
           "--no-default-browser-check",
           "--disable-background-mode",
-          "--start-maximized",
+          MINIMIZED && !HEADLESS ? "--start-minimized" : "--start-maximized",
           "--new-window",
         ];
         if (HEADLESS) args.push("--headless=new");
@@ -1392,6 +1395,10 @@ export class ChatGPTBrowser {
     if (openedChatGPTPage && PAGE_STARTUP_DELAY_MS > 0) {
       await this.#page.waitForLoadState("domcontentloaded", { timeout: ACTION_TIMEOUT_MS });
       await waitWithAbort(PAGE_STARTUP_DELAY_MS, this.signal());
+    }
+    if (openedChatGPTPage && MINIMIZED && !HEADLESS) {
+      const state = await readBrowserState();
+      await minimizeWindow(Number(state.pid));
     }
 
     return this.#page;
@@ -1496,7 +1503,7 @@ export class ChatGPTBrowser {
   async firstVisible(selectors, { timeout = 1_000 } = {}) {
     const page = await this.page();
     for (const selector of selectors) {
-      const locator = page.locator(selector).first();
+      const locator = page.locator(selector).filter({ visible: true }).first();
       try {
         if (await locator.isVisible({ timeout })) return locator;
       } catch {
@@ -1791,6 +1798,8 @@ export class ChatGPTBrowser {
 
   async ensureSignedIn() {
     const page = await this.page();
+    const gate = authenticationGate(await page.title());
+    if (gate) throw new ChatGPTWebError(gate.message, gate);
     const body = normalize(await page.locator("body").innerText().catch(() => ""));
     const rateLimit = classifyRateLimitText(body);
     if (rateLimit.limited) {
@@ -1816,6 +1825,8 @@ export class ChatGPTBrowser {
         : "ChatGPT MCP 的专用浏览器尚未登录。请在项目目录运行 npm run login，完成登录后再调用。",
       {
         url: page.url(),
+        code: "LOGIN_REQUIRED",
+        actionRequired: "Ask the user to complete manual login. Call chatgpt_begin_login to open the dedicated visible browser, then chatgpt_finish_login after confirmation. Never retry the pending message automatically.",
         loginVisible,
         profile: USER_DATA_DIR,
       },
@@ -2172,7 +2183,7 @@ export class ChatGPTBrowser {
       return { requested: mode, selected: best.item.name, changed: false };
     }
 
-    const option = page.getByRole("radio", { name: best.item.name, exact: true }).last();
+    const option = page.locator(SELECTORS.modeButtons.join(", ")).filter({ hasText: new RegExp(`^${best.item.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`) }).last();
     await this.click(option, "select-mode");
     await page.waitForTimeout(250);
     const selected = await this.currentMode();

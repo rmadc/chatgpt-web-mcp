@@ -19,9 +19,18 @@ import {
   RESPONSE_TIMEOUT_MS,
   SEND_INTERVAL_MS,
 } from "./config.js";
+import { beginLogin, finishLogin } from "./auth.js";
+import { installProjectScope } from "./project-scope.js";
+import { installModernPicker } from "./modern-picker.js";
+import { installLocalPresets, modeKind } from "./local-presets.js";
+import { listDownloads, downloadFile } from "./downloads.js";
+import { DOWNLOAD_DIR } from "./config.js";
 import { userFacingError } from "./errors.js";
 
 const browser = new ChatGPTBrowser();
+installModernPicker(browser);
+installProjectScope(browser);
+installLocalPresets(browser);
 const probeInstructions = PROBE_ENABLED
   ? `实验性网络身份探针已显式启用：仅在用户要求身份核对时使用，非 mini 的 model_slug 不等于已经验证为 Pro。探针不会强制选择 Pro 档位。同一页面会话复用缓存，关闭后保留 ${Math.round(PRO_PROBE_RECHECK_AFTER_CLOSE_MS / 3_600_000)} 小时；forceProbe 仅用于用户明确要求重新验证。`
   : "临时 Pro 身份探针默认停用。不得调用 chatgpt_probe_pro_identity，也不得用 requestPro=true 调用 chatgpt_route_new_chat；这些调用会在新建临时对话或发送测试消息前停止。普通极高路由使用 requestPro=false。";
@@ -29,8 +38,7 @@ const server = new McpServer({
   name: "chatgpt-web",
   version: "0.2.1",
 }, {
-  instructions:
-    `默认保持专用浏览器和 ChatGPT 页面常驻，除非用户明确要求，否则绝不调用 chatgpt_close_browser。发送最小间隔 ${SEND_INTERVAL_MS / 1_000} 秒，对话变更最小间隔 ${CONVERSATION_CHANGE_INTERVAL_MS / 1_000} 秒，回答完成后再等 ${POST_RESPONSE_CONVERSATION_COOLDOWN_MS / 1_000} 秒才切换；这些是下限，不保证免于限流。新建前的额外刷新当前${REFRESH_BEFORE_NEW_CHAT ? "开启" : "关闭"}，由 CHATGPT_WEB_REFRESH_BEFORE_NEW_CHAT 控制。每次发送前仍刷新当前对话，并校验 URL、草稿和附件；检测到变化则停止。对话达到 ${MAX_CONVERSATION_TURNS} 轮或出现 maximum-length 错误时，原子发送会先读取完整 transcript 并归档到 ${CONTEXT_ARCHIVE_DIR}，再新建普通对话；直接 submit_prompt 则拦截。新任务优先用 chatgpt_route_new_chat，普通请求使用页面可用档位“${DEFAULT_ANSWER_TIER}”。${probeInstructions}`,
+  instructions: `If a tool returns LOGIN_REQUIRED, ask the user to sign in using chatgpt_begin_login and finish with chatgpt_finish_login; never automatically repeat a message. All new conversations MUST be created in the configured CODEX-MCP project. Temporary chats are unavailable in this project. Use the compact chatgpt_send_message or chatgpt_route_new_chat tools for approved delegation. New conversations default to Work / GPT-6.1 Sol Light; mode Chat selects Medium effort (Chat does not expose a Work model name). Existing conversations use the detected current mode; if unavailable, require an explicit mode. Requested settings must be available; never substitute a different model. Local presets supersede upstream extreme-tier defaults. Low-level mode/model/thinking tools are explicit controls, not default routes. Do not send model identity probes. Ask user approval before delegation or uploads. Browser stays open until explicitly closed. At ${MAX_CONVERSATION_TURNS} turns, rotation saves a local Markdown archive before a new conversation; it does not inject the archive into the new chat. Use chatgpt_list_downloads and chatgpt_download_file to save selected generated files; downloads return local paths, not file contents. Stop on rate limits; do not retry.`,
 });
 
 function asResult(value, isError = false) {
@@ -370,6 +378,23 @@ process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
 process.stdin.on("end", shutdown);
 process.stdin.on("close", shutdown);
+
+tool("chatgpt_begin_login", "Open the dedicated visible Chrome for manual login only after the user approves. Ask the user to sign in; never enter credentials yourself or retry a pending message.", {}, () => beginLogin(browser), { allowDuringPause: true });
+tool("chatgpt_finish_login", "After the user confirms sign-in, check it and return the dedicated browser to headless operation. Never resend pending prompts automatically.", {}, () => finishLogin(browser), { allowDuringPause: true });
+
+tool("chatgpt_conversation_type", "Read the current conversation's visible Chat/Work selection without sending a message. Unknown means the UI did not expose a recognized selection; do not guess.", {}, async () => {
+  await browser.ensureSignedIn();
+  const mode = await browser.currentMode();
+  let type = null;
+  try { type = modeKind(mode); } catch {}
+  return { type, label: mode, source: "visible-mode-control", detected: type !== null };
+});
+
+tool("chatgpt_list_downloads", "List downloadable files in the latest assistant response; returns compact labels, not signed URLs.", {}, () => listDownloads(browser));
+tool("chatgpt_download_file", "Download one explicitly selected result file into the configured local download folder. No retries or overwrites.", {
+  index: z.number().int().min(0),
+  timeoutMs: z.number().int().min(1000).max(60000).default(30000),
+}, input => downloadFile(browser, { ...input, directory: DOWNLOAD_DIR }));
 
 const transport = new StdioServerTransport();
 await server.connect(transport);

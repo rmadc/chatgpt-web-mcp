@@ -69,7 +69,7 @@ export function resolveChromeExecutable(options = {}) {
 
 export const CHROME_EXECUTABLE = resolveChromeExecutable();
 
-export const HEADLESS = /^(1|true|yes)$/i.test(
+export let HEADLESS = /^(1|true|yes)$/i.test(
   process.env.CHATGPT_WEB_HEADLESS || "false",
 );
 
@@ -208,3 +208,11 @@ export const CONTEXT_ARCHIVE_DIR = path.resolve(
 );
 
 export const MAX_HISTORY_RESULTS = 50;
+
+// Local result files; caller cannot choose arbitrary paths via MCP.
+export const DOWNLOAD_DIR = path.resolve(process.env.CHATGPT_WEB_DOWNLOAD_DIR || path.join(os.homedir(), ".chatgpt-web-mcp", "downloads"));
+
+export function setHeadless(enabled) { HEADLESS = Boolean(enabled); }
+
+export let MINIMIZED = process.env.CHATGPT_WEB_MINIMIZED !== "false";
+export function setMinimized(enabled) { MINIMIZED = Boolean(enabled); }

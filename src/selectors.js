@@ -74,6 +74,7 @@ export const SELECTORS = {
     "button[aria-label*='模型选择']",
   ],
   modeButtons: [
+    "[aria-label='Composer mode'] button[aria-pressed]",
     "button[role='radio'][aria-checked]",
     "[role='radiogroup'] button[role='radio']",
   ],

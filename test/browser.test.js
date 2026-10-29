@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import path from "node:path";
 
 import {
   classifyNetworkModelSlug,
@@ -173,14 +174,14 @@ test("chromeExecutableCandidates supports explicit and platform-specific paths",
       env: { CHATGPT_WEB_CHROME: "/opt/custom/chrome" },
       home: "/home/test",
     }),
-    ["/opt/custom/chrome"],
+    [path.resolve("/opt/custom/chrome")],
   );
   const windows = chromeExecutableCandidates({
     platform: "win32",
     env: { LOCALAPPDATA: "C:\\Users\\test\\AppData\\Local" },
     home: "C:\\Users\\test",
   });
-  assert.ok(windows.some((candidate) => candidate.endsWith("Google/Chrome/Application/chrome.exe")));
+  assert.ok(windows.some((candidate) => candidate.replaceAll("\\", "/").endsWith("Google/Chrome/Application/chrome.exe")));
 });
 
 test("classifyRateLimitText separates history and generation limits", () => {
